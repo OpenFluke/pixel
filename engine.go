@@ -23,9 +23,17 @@ type Cube struct {
 	Position []float64
 }
 
+type CubeLink struct {
+	JointName string
+	CubeA     string
+	CubeB     string
+}
+
 var (
-	globalCubeList []string
-	cubeListMutex  sync.Mutex
+	globalCubeList  []string
+	cubeListMutex   sync.Mutex
+	globalCubeLinks []CubeLink
+	linkListMutex   sync.Mutex
 )
 
 func sendJSONMessage(conn net.Conn, msg Message) error {
@@ -150,83 +158,198 @@ func despawnAllCubes() {
 	wg.Wait()
 }
 
+func linkCubes(cubeA, cubeB, jointType, jointName string) {
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Println("[Link] Failed to connect:", err)
+		return
+	}
+	defer conn.Close()
+
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[Link] Auth write error:", err)
+		return
+	}
+	_, _ = readResponse(conn)
+
+	link := Message{
+		"type":       "create_joint",
+		"cube1":      cubeA,
+		"cube2":      cubeB,
+		"joint_type": jointType,
+		"joint_name": jointName,
+	}
+
+	if err := sendJSONMessage(conn, link); err != nil {
+		fmt.Println("[Link] Failed to send link command:", err)
+		return
+	}
+
+	linkListMutex.Lock()
+	globalCubeLinks = append(globalCubeLinks, CubeLink{
+		JointName: jointName,
+		CubeA:     cubeA,
+		CubeB:     cubeB,
+	})
+	linkListMutex.Unlock()
+
+	fmt.Printf("🔗 Linked %s <--> %s with joint '%s' (%s)\n", cubeA, cubeB, jointName, jointType)
+}
+
+// setJointParam sends a JSON command to set a specific parameter for a joint.
+func setJointParam(conn net.Conn, jointName, paramName string, value float64) {
+	// Build the command message.
+	cmd := Message{
+		"type":       "set_joint_param",
+		"joint_name": jointName,
+		"param_name": paramName,
+		"value":      value,
+	}
+	// Send the JSON command.
+	if err := sendJSONMessage(conn, cmd); err != nil {
+		fmt.Printf("[setJointParam] Failed to send command for joint %s: %v\n", jointName, err)
+		return
+	}
+	// Optionally, read the server response.
+	resp, err := readResponse(conn)
+	if err != nil {
+		fmt.Printf("[setJointParam] Error reading response for joint %s: %v\n", jointName, err)
+		return
+	}
+	fmt.Printf("[setJointParam] Joint %s param %s set to %v, response: %s\n", jointName, paramName, value, resp)
+}
+
+// stiffenAllJoints opens a TCP connection, authenticates, and then loops over all joints
+// (stored in globalCubeLinks) to apply a set of stiffening parameters.
+func stiffenAllJoints() {
+	// Open a connection.
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Println("[stiffenAllJoints] Failed to connect:", err)
+		return
+	}
+	defer conn.Close()
+
+	// Authenticate.
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[stiffenAllJoints] Auth write error:", err)
+		return
+	}
+	_, err = readResponse(conn)
+	if err != nil {
+		fmt.Println("[stiffenAllJoints] Failed to read auth response:", err)
+		return
+	}
+
+	// Define the parameters to enforce stiffness.
+	/*params := map[string]float64{
+		"limit_upper":           0.0, // both 0 => no swing
+		"limit_lower":           0.0,
+		"motor_enable":          1.0,
+		"motor_target_velocity": 0.0,
+		"motor_max_impulse":     1000.0,
+		"limit_softness":        1.0,
+		"limit_bias":            0.9,
+		"limit_relaxation":      1.0,
+	}*/
+
+	params := map[string]float64{
+		"limit_upper":           0.0,
+		"limit_lower":           0.0,
+		"motor_enable":          1.0,
+		"motor_target_velocity": 0.0,
+		"motor_max_impulse":     1000.0,
+	}
+
+	// Loop over each joint stored in globalCubeLinks.
+	for _, link := range globalCubeLinks {
+		for param, value := range params {
+			setJointParam(conn, link.JointName, param, value)
+		}
+	}
+}
+
 func main() {
+	// Position offset for moving the whole structure
+	var offset = []float64{40, -20, -3} // Example: move dog +10 X, +5 Y, -3 Z
+
+	// Cube groups with offset applied manually
 	cubeGroups := [][]Cube{
 		{
-			{Name: "rightear", Position: []float64{0, 130, 0}},
-			{Name: "leftear", Position: []float64{2, 130, 0}},
+			{Name: "rightear", Position: []float64{0 + offset[0], 130 + offset[1], 0 + offset[2]}},
+			{Name: "leftear", Position: []float64{2 + offset[0], 130 + offset[1], 0 + offset[2]}},
 		},
 		{
-			{Name: "head1", Position: []float64{0, 128.9, 0}},
-			{Name: "head2", Position: []float64{1, 128.9, 0}},
-			{Name: "head3", Position: []float64{2, 128.9, 0}},
-			{Name: "head4", Position: []float64{0, 128.9, 1}},
-			{Name: "head5", Position: []float64{1, 128.9, 1}},
-			{Name: "head6", Position: []float64{2, 128.9, 1}},
-			{Name: "head7", Position: []float64{0, 127.9, 0}},
-			{Name: "head8", Position: []float64{1, 127.9, 0}},
-			{Name: "head9", Position: []float64{2, 127.9, 0}},
-			{Name: "head10", Position: []float64{0, 127.9, 1}},
-			{Name: "head11", Position: []float64{1, 127.9, 1}},
-			{Name: "head12", Position: []float64{2, 127.9, 1}},
+			{Name: "head1", Position: []float64{0 + offset[0], 128.9 + offset[1], 0 + offset[2]}},
+			{Name: "head2", Position: []float64{1 + offset[0], 128.9 + offset[1], 0 + offset[2]}},
+			{Name: "head3", Position: []float64{2 + offset[0], 128.9 + offset[1], 0 + offset[2]}},
+			{Name: "head4", Position: []float64{0 + offset[0], 128.9 + offset[1], 1 + offset[2]}},
+			{Name: "head5", Position: []float64{1 + offset[0], 128.9 + offset[1], 1 + offset[2]}},
+			{Name: "head6", Position: []float64{2 + offset[0], 128.9 + offset[1], 1 + offset[2]}},
+			{Name: "head7", Position: []float64{0 + offset[0], 127.9 + offset[1], 0 + offset[2]}},
+			{Name: "head8", Position: []float64{1 + offset[0], 127.9 + offset[1], 0 + offset[2]}},
+			{Name: "head9", Position: []float64{2 + offset[0], 127.9 + offset[1], 0 + offset[2]}},
+			{Name: "head10", Position: []float64{0 + offset[0], 127.9 + offset[1], 1 + offset[2]}},
+			{Name: "head11", Position: []float64{1 + offset[0], 127.9 + offset[1], 1 + offset[2]}},
+			{Name: "head12", Position: []float64{2 + offset[0], 127.9 + offset[1], 1 + offset[2]}},
 		},
 		{
-			{Name: "leftmouth", Position: []float64{0.5, 128.9, -1}},
-			{Name: "rightmouth", Position: []float64{1.5, 128.9, -1}},
+			{Name: "leftmouth", Position: []float64{0.5 + offset[0], 128.9 + offset[1], -1 + offset[2]}},
+			{Name: "rightmouth", Position: []float64{1.5 + offset[0], 128.9 + offset[1], -1 + offset[2]}},
 		},
 		{
-			{Name: "neck", Position: []float64{1, 126.9, 0.5}},
+			{Name: "neck", Position: []float64{1 + offset[0], 126.9 + offset[1], 0.5 + offset[2]}},
 		},
 		{
-			{Name: "body1", Position: []float64{0, 125.9, 0}},
-			{Name: "body2", Position: []float64{1, 125.9, 0}},
-			{Name: "body3", Position: []float64{2, 125.9, 0}},
-			{Name: "body4", Position: []float64{0, 125.9, 1}},
-			{Name: "body5", Position: []float64{1, 125.9, 1}},
-			{Name: "body6", Position: []float64{2, 125.9, 1}},
-			{Name: "body7", Position: []float64{0, 124.9, 0}},
-			{Name: "body8", Position: []float64{1, 124.9, 0}},
-			{Name: "body9", Position: []float64{2, 124.9, 0}},
-			{Name: "body10", Position: []float64{0, 124.9, 1}},
-			{Name: "body11", Position: []float64{1, 124.9, 1}},
-			{Name: "body12", Position: []float64{2, 124.9, 1}},
-			{Name: "body13", Position: []float64{0, 125.9, 2}},
-			{Name: "body14", Position: []float64{1, 125.9, 2}},
-			{Name: "body15", Position: []float64{2, 125.9, 2}},
-			{Name: "body16", Position: []float64{0, 125.9, 3}},
-			{Name: "body17", Position: []float64{1, 125.9, 3}},
-			{Name: "body18", Position: []float64{2, 125.9, 3}},
-			{Name: "body19", Position: []float64{0, 124.9, 2}},
-			{Name: "body20", Position: []float64{1, 124.9, 2}},
-			{Name: "body21", Position: []float64{2, 124.9, 2}},
-			{Name: "body22", Position: []float64{0, 124.9, 3}},
-			{Name: "body23", Position: []float64{1, 124.9, 3}},
-			{Name: "body24", Position: []float64{2, 124.9, 3}},
+			{Name: "body1", Position: []float64{0 + offset[0], 125.9 + offset[1], 0 + offset[2]}},
+			{Name: "body2", Position: []float64{1 + offset[0], 125.9 + offset[1], 0 + offset[2]}},
+			{Name: "body3", Position: []float64{2 + offset[0], 125.9 + offset[1], 0 + offset[2]}},
+			{Name: "body4", Position: []float64{0 + offset[0], 125.9 + offset[1], 1 + offset[2]}},
+			{Name: "body5", Position: []float64{1 + offset[0], 125.9 + offset[1], 1 + offset[2]}},
+			{Name: "body6", Position: []float64{2 + offset[0], 125.9 + offset[1], 1 + offset[2]}},
+			{Name: "body7", Position: []float64{0 + offset[0], 124.9 + offset[1], 0 + offset[2]}},
+			{Name: "body8", Position: []float64{1 + offset[0], 124.9 + offset[1], 0 + offset[2]}},
+			{Name: "body9", Position: []float64{2 + offset[0], 124.9 + offset[1], 0 + offset[2]}},
+			{Name: "body10", Position: []float64{0 + offset[0], 124.9 + offset[1], 1 + offset[2]}},
+			{Name: "body11", Position: []float64{1 + offset[0], 124.9 + offset[1], 1 + offset[2]}},
+			{Name: "body12", Position: []float64{2 + offset[0], 124.9 + offset[1], 1 + offset[2]}},
+			{Name: "body13", Position: []float64{0 + offset[0], 125.9 + offset[1], 2 + offset[2]}},
+			{Name: "body14", Position: []float64{1 + offset[0], 125.9 + offset[1], 2 + offset[2]}},
+			{Name: "body15", Position: []float64{2 + offset[0], 125.9 + offset[1], 2 + offset[2]}},
+			{Name: "body16", Position: []float64{0 + offset[0], 125.9 + offset[1], 3 + offset[2]}},
+			{Name: "body17", Position: []float64{1 + offset[0], 125.9 + offset[1], 3 + offset[2]}},
+			{Name: "body18", Position: []float64{2 + offset[0], 125.9 + offset[1], 3 + offset[2]}},
+			{Name: "body19", Position: []float64{0 + offset[0], 124.9 + offset[1], 2 + offset[2]}},
+			{Name: "body20", Position: []float64{1 + offset[0], 124.9 + offset[1], 2 + offset[2]}},
+			{Name: "body21", Position: []float64{2 + offset[0], 124.9 + offset[1], 2 + offset[2]}},
+			{Name: "body22", Position: []float64{0 + offset[0], 124.9 + offset[1], 3 + offset[2]}},
+			{Name: "body23", Position: []float64{1 + offset[0], 124.9 + offset[1], 3 + offset[2]}},
+			{Name: "body24", Position: []float64{2 + offset[0], 124.9 + offset[1], 3 + offset[2]}},
 		},
 		{
-			{Name: "leftbackleg1", Position: []float64{2, 123.7, 3}},
-			{Name: "leftbackknee1", Position: []float64{2, 122.5, 3}},
-			{Name: "leftbackleg2", Position: []float64{2, 121.3, 3}},
+			{Name: "leftbackleg1", Position: []float64{2 + offset[0], 123.7 + offset[1], 3 + offset[2]}},
+			{Name: "leftbackknee1", Position: []float64{2 + offset[0], 122.5 + offset[1], 3 + offset[2]}},
+			{Name: "leftbackleg2", Position: []float64{2 + offset[0], 121.3 + offset[1], 3 + offset[2]}},
 		},
 		{
-			{Name: "leftfrontleg1", Position: []float64{2, 123.7, 0}},
-			{Name: "leftfrontknee1", Position: []float64{2, 122.5, 0}},
-			{Name: "leftfrontleg2", Position: []float64{2, 121.3, 0}},
+			{Name: "leftfrontleg1", Position: []float64{2 + offset[0], 123.7 + offset[1], 0 + offset[2]}},
+			{Name: "leftfrontknee1", Position: []float64{2 + offset[0], 122.5 + offset[1], 0 + offset[2]}},
+			{Name: "leftfrontleg2", Position: []float64{2 + offset[0], 121.3 + offset[1], 0 + offset[2]}},
 		},
 		{
-			{Name: "rightbackleg1", Position: []float64{0, 123.7, 3}},
-			{Name: "rightbackknee1", Position: []float64{0, 122.5, 3}},
-			{Name: "rightbackleg2", Position: []float64{0, 121.3, 3}},
+			{Name: "rightbackleg1", Position: []float64{0 + offset[0], 123.7 + offset[1], 3 + offset[2]}},
+			{Name: "rightbackknee1", Position: []float64{0 + offset[0], 122.5 + offset[1], 3 + offset[2]}},
+			{Name: "rightbackleg2", Position: []float64{0 + offset[0], 121.3 + offset[1], 3 + offset[2]}},
 		},
 		{
-			{Name: "rightfrontleg1", Position: []float64{0, 123.7, 0}},
-			{Name: "rightfrontknee1", Position: []float64{0, 122.5, 0}},
-			{Name: "rightfrontleg2", Position: []float64{0, 121.3, 0}},
+			{Name: "rightfrontleg1", Position: []float64{0 + offset[0], 123.7 + offset[1], 0 + offset[2]}},
+			{Name: "rightfrontknee1", Position: []float64{0 + offset[0], 122.5 + offset[1], 0 + offset[2]}},
+			{Name: "rightfrontleg2", Position: []float64{0 + offset[0], 121.3 + offset[1], 0 + offset[2]}},
 		},
 		{
-			{Name: "tail1", Position: []float64{1, 127.2, 3}},
-			{Name: "tail2", Position: []float64{1, 128.4, 3}},
-			{Name: "tail3", Position: []float64{1, 129.6, 3}},
+			{Name: "tail1", Position: []float64{1 + offset[0], 127.2 + offset[1], 3 + offset[2]}},
+			{Name: "tail2", Position: []float64{1 + offset[0], 128.4 + offset[1], 3 + offset[2]}},
+			{Name: "tail3", Position: []float64{1 + offset[0], 129.6 + offset[1], 3 + offset[2]}},
 		},
 	}
 
@@ -238,6 +361,23 @@ func main() {
 		}
 	}
 	wg.Wait()
+
+	//linkCubes("head6_BASE", "leftmouth_BASE", "hinge", "jaw_joint_left")
+	//linkCubes("head7_BASE", "rightmouth_BASE", "hinge", "jaw_joint_right")
+
+	/*stiffenJoint("jaw_joint_left", map[string]float64{
+		"bias":    0.9,
+		"damping": 1.0,
+	})*/
+
+	//linkCubes("head6_BASE", "leftmouth_BASE", "hinge", "jaw_joint_left")
+	//linkCubes("head7_BASE", "rightmouth_BASE", "hinge", "jaw_joint_right")
+
+	linkCubes("tail1_BASE", "tail2_BASE", "hinge", "tail_joint1")
+	linkCubes("tail2_BASE", "tail3_BASE", "hinge", "tail_joint2")
+
+	// Apply stiffening to all joints.
+	stiffenAllJoints()
 
 	fmt.Println("Spawned all cubes.")
 	unfreezeAllCubes()
