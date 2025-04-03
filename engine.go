@@ -221,7 +221,7 @@ func setJointParam(conn net.Conn, jointName, paramName string, value float64) {
 
 // stiffenAllJoints opens a TCP connection, authenticates, and then loops over all joints
 // (stored in globalCubeLinks) to apply a set of stiffening parameters.
-func stiffenAllJoints() {
+func SingleThreadedstiffenAllJoints() {
 	// Open a connection.
 	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
@@ -267,6 +267,99 @@ func stiffenAllJoints() {
 			setJointParam(conn, link.JointName, param, value)
 		}
 	}
+}
+
+func SingleTCPConnectionExamplestiffenAllJoints() {
+	// Define the parameters for stiffening.
+	params := map[string]float64{
+		"limit_upper":           0.0,
+		"limit_lower":           0.0,
+		"motor_enable":          1.0,
+		"motor_target_velocity": 0.0,
+		"motor_max_impulse":     1000.0,
+	}
+
+	// 1) Open ONE TCP connection for all joints.
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Println("[stiffenAllJoints] Failed to connect:", err)
+		return
+	}
+	defer conn.Close()
+
+	// Authenticate once.
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[stiffenAllJoints] Auth write error:", err)
+		return
+	}
+	if _, err := readResponse(conn); err != nil {
+		fmt.Println("[stiffenAllJoints] Auth response error:", err)
+		return
+	}
+
+	// 2) For each joint in globalCubeLinks...
+	for _, link := range globalCubeLinks {
+		// 3) For each parameter, send the command via setJointParam.
+		for paramName, val := range params {
+			setJointParam(conn, link.JointName, paramName, val)
+
+			// (Optional) read server confirmation if your setJointParam
+			// doesn't already do that internally.
+			// resp, err := readResponse(conn)
+			// if err != nil {
+			//     fmt.Printf("[stiffenAllJoints] Error reading response for joint %s: %v\n", link.JointName, err)
+			// }
+		}
+	}
+
+	fmt.Println("[stiffenAllJoints] All joints have been stiffened using a single connection.")
+}
+
+func stiffenAllJoints() {
+	// The parameter set we want for each joint.
+	params := map[string]float64{
+		"limit_upper":           0.0,
+		"limit_lower":           0.0,
+		"motor_enable":          1.0,
+		"motor_target_velocity": 0.0,
+		"motor_max_impulse":     1000.0,
+	}
+
+	// We'll spawn one goroutine per joint in globalCubeLinks.
+	var wg sync.WaitGroup
+	for _, link := range globalCubeLinks {
+		wg.Add(1)
+		go func(joint CubeLink) {
+			defer wg.Done()
+
+			// Open a fresh TCP connection for this joint.
+			conn, err := net.Dial("tcp", serverAddr)
+			if err != nil {
+				fmt.Printf("[stiffenAllJoints] Failed to connect for joint %s: %v\n", joint.JointName, err)
+				return
+			}
+			defer conn.Close()
+
+			// Authenticate
+			if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+				fmt.Printf("[stiffenAllJoints] Auth write error for joint %s: %v\n", joint.JointName, err)
+				return
+			}
+			if _, err := readResponse(conn); err != nil {
+				fmt.Printf("[stiffenAllJoints] Auth response error for joint %s: %v\n", joint.JointName, err)
+				return
+			}
+
+			// For each parameter, set it on this joint.
+			for paramName, val := range params {
+				setJointParam(conn, joint.JointName, paramName, val)
+			}
+		}(link)
+	}
+
+	// Wait for all joint goroutines to finish.
+	wg.Wait()
+	fmt.Println("[stiffenAllJoints] All joints have been stiffened.")
 }
 
 func main() {
@@ -377,7 +470,20 @@ func main() {
 	linkCubes("tail2_BASE", "tail3_BASE", "hinge", "tail_joint2")
 
 	// Apply stiffening to all joints.
+	start := time.Now()
 	stiffenAllJoints()
+	duration := time.Since(start) // End timer
+	fmt.Println("stiffenAllJoints Function took:", duration)
+
+	start = time.Now()
+	SingleTCPConnectionExamplestiffenAllJoints()
+	duration = time.Since(start) // End timer
+	fmt.Println("SingleTCPConnectionExamplestiffenAllJoints Function took:", duration)
+
+	start = time.Now()
+	SingleThreadedstiffenAllJoints()
+	duration = time.Since(start) // End timer
+	fmt.Println("SingleThreadedstiffenAllJoints Function took:", duration)
 
 	fmt.Println("Spawned all cubes.")
 	unfreezeAllCubes()
