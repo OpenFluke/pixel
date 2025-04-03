@@ -565,6 +565,20 @@ func main() {
 	linkCubes("tail1_BASE", "tail2_BASE", "hinge", "tail_joint1")
 	linkCubes("tail2_BASE", "tail3_BASE", "hinge", "tail_joint2")
 
+	//backlegs
+	linkCubes("leftbackleg1_BASE", "leftbackknee1_BASE", "hinge", "backleft_leg_joint1")
+	linkCubes("leftbackknee1_BASE", "leftbackleg2_BASE", "hinge", "backleft_leg_joint2")
+
+	linkCubes("rightbackleg1_BASE", "rightbackknee1_BASE", "hinge", "backright_leg_joint1")
+	linkCubes("rightbackknee1_BASE", "rightbackleg2_BASE", "hinge", "backright_leg_joint2")
+
+	//frontlegs
+	linkCubes("leftfrontleg1_BASE", "leftfrontknee1_BASE", "hinge", "frontleft_leg_joint1")
+	linkCubes("leftfrontknee1_BASE", "leftfrontleg2_BASE", "hinge", "frontleft_leg_joint2")
+
+	linkCubes("rightfrontleg1_BASE", "rightfrontknee1_BASE", "hinge", "frontright_leg_joint1")
+	linkCubes("rightfrontknee1_BASE", "rightfrontleg2_BASE", "hinge", "frontright_leg_joint2")
+
 	// Apply stiffening to all joints.
 	/*start := time.Now()
 	stiffenAllJoints()
