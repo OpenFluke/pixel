@@ -362,6 +362,62 @@ func stiffenAllJoints() {
 	fmt.Println("[stiffenAllJoints] All joints have been stiffened.")
 }
 
+func setJointParams(conn net.Conn, jointName string, params map[string]float64) {
+	cmd := Message{
+		"type":       "set_joint_params",
+		"joint_name": jointName,
+		"params":     params,
+	}
+	if err := sendJSONMessage(conn, cmd); err != nil {
+		fmt.Printf("[setJointParams] Failed to send joint params for %s: %v\n", jointName, err)
+		return
+	}
+	resp, err := readResponse(conn)
+	if err != nil {
+		fmt.Printf("[setJointParams] Read error for %s: %v\n", jointName, err)
+		return
+	}
+	fmt.Printf("[setJointParams] %s response: %s\n", jointName, resp)
+}
+
+func stiffenAllJointsBULK() {
+	params := map[string]float64{
+		"limit_upper":           0.0,
+		"limit_lower":           0.0,
+		"motor_enable":          1.0,
+		"motor_target_velocity": 0.0,
+		"motor_max_impulse":     1000.0,
+	}
+
+	var wg sync.WaitGroup
+	for _, link := range globalCubeLinks {
+		wg.Add(1)
+		go func(joint CubeLink) {
+			defer wg.Done()
+
+			conn, err := net.Dial("tcp", serverAddr)
+			if err != nil {
+				fmt.Printf("[stiffenAllJoints] Failed to connect for joint %s: %v\n", joint.JointName, err)
+				return
+			}
+			defer conn.Close()
+
+			if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+				fmt.Printf("[stiffenAllJoints] Auth write error for joint %s: %v\n", joint.JointName, err)
+				return
+			}
+			if _, err := readResponse(conn); err != nil {
+				fmt.Printf("[stiffenAllJoints] Auth response error for joint %s: %v\n", joint.JointName, err)
+				return
+			}
+
+			setJointParams(conn, joint.JointName, params)
+		}(link)
+	}
+	wg.Wait()
+	fmt.Println("[stiffenAllJoints] All joints updated.")
+}
+
 func main() {
 	// Position offset for moving the whole structure
 	var offset = []float64{40, -20, -3} // Example: move dog +10 X, +5 Y, -3 Z
@@ -470,7 +526,7 @@ func main() {
 	linkCubes("tail2_BASE", "tail3_BASE", "hinge", "tail_joint2")
 
 	// Apply stiffening to all joints.
-	start := time.Now()
+	/*start := time.Now()
 	stiffenAllJoints()
 	duration := time.Since(start) // End timer
 	fmt.Println("stiffenAllJoints Function took:", duration)
@@ -483,7 +539,12 @@ func main() {
 	start = time.Now()
 	SingleThreadedstiffenAllJoints()
 	duration = time.Since(start) // End timer
-	fmt.Println("SingleThreadedstiffenAllJoints Function took:", duration)
+	fmt.Println("SingleThreadedstiffenAllJoints Function took:", duration)*/
+
+	start := time.Now()
+	stiffenAllJointsBULK()
+	duration := time.Since(start) // End timer
+	fmt.Println("stiffenAllJointsBULK Function took:", duration)
 
 	fmt.Println("Spawned all cubes.")
 	unfreezeAllCubes()
