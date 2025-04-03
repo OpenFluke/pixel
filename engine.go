@@ -418,6 +418,44 @@ func stiffenAllJointsBULK() {
 	fmt.Println("[stiffenAllJoints] All joints updated.")
 }
 
+func setMouthColorYellow() {
+	var mouthCubes = []string{"leftmouth_BASE", "rightmouth_BASE"}
+
+	var wg sync.WaitGroup
+	for _, cubeName := range mouthCubes {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			conn, err := net.Dial("tcp", serverAddr)
+			if err != nil {
+				fmt.Printf("[Color] Failed to connect for cube %s: %v\n", name, err)
+				return
+			}
+			defer conn.Close()
+
+			if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+				fmt.Printf("[Color] Auth write error for cube %s: %v\n", name, err)
+				return
+			}
+			if _, err := readResponse(conn); err != nil {
+				fmt.Printf("[Color] Auth response error for cube %s: %v\n", name, err)
+				return
+			}
+
+			colorMsg := Message{
+				"type":      "set_color",
+				"cube_name": name,
+				"hex":       "#FFFF00", // Yellow
+			}
+
+			if err := sendJSONMessage(conn, colorMsg); err != nil {
+				fmt.Printf("[Color] Failed to send color change for cube %s: %v\n", name, err)
+			}
+		}(cubeName)
+	}
+	wg.Wait()
+}
+
 func main() {
 	// Position offset for moving the whole structure
 	var offset = []float64{40, -20, -3} // Example: move dog +10 X, +5 Y, -3 Z
@@ -510,6 +548,8 @@ func main() {
 		}
 	}
 	wg.Wait()
+
+	setMouthColorYellow()
 
 	//linkCubes("head6_BASE", "leftmouth_BASE", "hinge", "jaw_joint_left")
 	//linkCubes("head7_BASE", "rightmouth_BASE", "hinge", "jaw_joint_right")
