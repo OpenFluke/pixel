@@ -456,6 +456,53 @@ func setMouthColorYellow() {
 	wg.Wait()
 }
 
+// testLinkBodyCubes creates a TCP connection, authenticates, and sends a JSON command
+// to link all cubes whose names start with the given prefix.
+// It prints both the authentication response and the command response.
+func testLinkBodyCubes(prefix string, jointType string, jointParams map[string]float64) {
+	// Connect to the server.
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Println("[testLinkBodyCubes] Error connecting:", err)
+		return
+	}
+	defer conn.Close()
+
+	// Authenticate with the server.
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[testLinkBodyCubes] Auth write error:", err)
+		return
+	}
+	authResp, err := readResponse(conn)
+	if err != nil {
+		fmt.Println("[testLinkBodyCubes] Failed to read auth response:", err)
+		return
+	}
+	fmt.Println("[testLinkBodyCubes] Auth response:", authResp)
+
+	// Build the JSON command message.
+	cmdMsg := Message{
+		"type":         "link_body_cubes",
+		"prefix":       prefix,
+		"joint_type":   jointType,
+		"joint_params": jointParams,
+	}
+
+	// Send the command.
+	if err := sendJSONMessage(conn, cmdMsg); err != nil {
+		fmt.Println("[testLinkBodyCubes] Error sending command:", err)
+		return
+	}
+
+	// Optionally read the server's response to the command.
+	cmdResp, err := readResponse(conn)
+	if err != nil {
+		fmt.Println("[testLinkBodyCubes] Error reading command response:", err)
+		return
+	}
+	fmt.Println("[testLinkBodyCubes] Command response:", cmdResp)
+}
+
 func main() {
 	// Position offset for moving the whole structure
 	var offset = []float64{40, -20, -3} // Example: move dog +10 X, +5 Y, -3 Z
@@ -599,6 +646,20 @@ func main() {
 	stiffenAllJointsBULK()
 	duration := time.Since(start) // End timer
 	fmt.Println("stiffenAllJointsBULK Function took:", duration)
+
+	// Define joint parameters for the hinge joint.
+	jointParams := map[string]float64{
+		"limit_upper":           0.0,
+		"limit_lower":           0.0,
+		"motor_enable":          1.0,
+		"motor_target_velocity": 0.0,
+		"motor_max_impulse":     1000.0,
+	}
+
+	// Call testLinkBodyCubes with prefix "body" and joint type "hinge".
+	testLinkBodyCubes("body", "hinge", jointParams)
+
+	testLinkBodyCubes("head", "hinge", jointParams)
 
 	fmt.Println("Spawned all cubes.")
 	unfreezeAllCubes()
