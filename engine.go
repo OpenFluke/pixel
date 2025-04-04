@@ -419,7 +419,7 @@ func stiffenAllJointsBULK() {
 }
 
 func setMouthColorYellow() {
-	var mouthCubes = []string{"leftmouth_BASE", "rightmouth_BASE"}
+	var mouthCubes = []string{"leftmouth_BASE", "rightmouth_BASE", "body24_BASE", "body22_BASE", "body9_BASE", "body7_BASE"}
 
 	var wg sync.WaitGroup
 	for _, cubeName := range mouthCubes {
@@ -625,6 +625,12 @@ func main() {
 
 	linkCubes("rightfrontleg1_BASE", "rightfrontknee1_BASE", "hinge", "frontright_leg_joint1")
 	linkCubes("rightfrontknee1_BASE", "rightfrontleg2_BASE", "hinge", "frontright_leg_joint2")
+
+	//connecting legs to body
+	linkCubes("body24_BASE", "leftbackleg1_BASE", "hinge", "backlefttobody_leg_joint1")
+	linkCubes("body22_BASE", "rightbackleg1_BASE", "hinge", "backrighttobody_leg_joint1")
+	linkCubes("body9_BASE", "leftfrontleg1_BASE", "hinge", "frontlefttobody_leg_joint1")
+	linkCubes("body7_BASE", "rightfrontleg1_BASE", "hinge", "frontrighttobody_leg_joint1")
 
 	// Apply stiffening to all joints.
 	/*start := time.Now()
