@@ -503,6 +503,63 @@ func testLinkBodyCubes(prefix string, jointType string, jointParams map[string]f
 	fmt.Println("[testLinkBodyCubes] Command response:", cmdResp)
 }
 
+func linkCubeChains(chains [][]string, jointType string, jointParams map[string]float64) error {
+	// Establish TCP connection
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		return fmt.Errorf("[linkCubeChains] Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Authenticate
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		return fmt.Errorf("[linkCubeChains] Auth write error: %v", err)
+	}
+	authResp, err := readResponse(conn)
+	if err != nil {
+		return fmt.Errorf("[linkCubeChains] Failed to read auth response: %v", err)
+	}
+	fmt.Println("[linkCubeChains] Auth response:", authResp)
+
+	// Construct the command
+	cmd := Message{
+		"type":         "link_cube_chains",
+		"chains":       chains,
+		"joint_type":   jointType,
+		"joint_params": jointParams,
+	}
+
+	// Send the command
+	if err := sendJSONMessage(conn, cmd); err != nil {
+		return fmt.Errorf("[linkCubeChains] Failed to send command: %v", err)
+	}
+
+	// Read response (optional)
+	resp, err := readResponse(conn)
+	if err != nil {
+		return fmt.Errorf("[linkCubeChains] Error reading response: %v", err)
+	}
+	fmt.Println("[linkCubeChains] Server response:", resp)
+
+	// Update globalCubeLinks for tracking (optional, adjust as needed)
+	linkListMutex.Lock()
+	defer linkListMutex.Unlock()
+	for _, chain := range chains {
+		for i := 0; i < len(chain)-1; i++ {
+			cubeA := chain[i]
+			cubeB := chain[i+1]
+			jointName := fmt.Sprintf("joint_%s_%s_%s", jointType, cubeA, cubeB) // Simplified name
+			globalCubeLinks = append(globalCubeLinks, CubeLink{
+				JointName: jointName,
+				CubeA:     cubeA,
+				CubeB:     cubeB,
+			})
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	// Position offset for moving the whole structure
 	var offset = []float64{40, -20, -3} // Example: move dog +10 X, +5 Y, -3 Z
@@ -609,7 +666,7 @@ func main() {
 	//linkCubes("head6_BASE", "leftmouth_BASE", "hinge", "jaw_joint_left")
 	//linkCubes("head7_BASE", "rightmouth_BASE", "hinge", "jaw_joint_right")
 
-	linkCubes("tail1_BASE", "tail2_BASE", "hinge", "tail_joint1")
+	/*linkCubes("tail1_BASE", "tail2_BASE", "hinge", "tail_joint1")
 	linkCubes("tail2_BASE", "tail3_BASE", "hinge", "tail_joint2")
 
 	//backlegs
@@ -631,7 +688,7 @@ func main() {
 	linkCubes("body22_BASE", "rightbackleg1_BASE", "hinge", "backrighttobody_leg_joint1")
 	linkCubes("body9_BASE", "leftfrontleg1_BASE", "hinge", "frontlefttobody_leg_joint1")
 	linkCubes("body7_BASE", "rightfrontleg1_BASE", "hinge", "frontrighttobody_leg_joint1")
-
+	*/
 	// Apply stiffening to all joints.
 	/*start := time.Now()
 	stiffenAllJoints()
@@ -666,6 +723,31 @@ func main() {
 	testLinkBodyCubes("body", "hinge", jointParams)
 
 	testLinkBodyCubes("head", "hinge", jointParams)
+
+	chains := [][]string{
+		{"leftbackleg1_BASE", "leftbackknee1_BASE", "leftbackleg2_BASE"},
+		{"rightbackleg1_BASE", "rightbackknee1_BASE", "rightbackleg2_BASE"},
+		{"leftfrontleg1_BASE", "leftfrontknee1_BASE", "leftfrontleg2_BASE"},
+		{"rightfrontleg1_BASE", "rightfrontknee1_BASE", "rightfrontleg2_BASE"},
+		{"tail1_BASE", "tail2_BASE", "tail3_BASE"},
+		{"body24_BASE", "leftbackleg1_BASE"},
+		{"body22_BASE", "rightbackleg1_BASE"},
+		{"body9_BASE", "leftfrontleg1_BASE"},
+		{"body7_BASE", "rightfrontleg1_BASE"},
+	}
+
+	if err := linkCubeChains(chains, "hinge", jointParams); err != nil {
+		fmt.Println("Error linking cube chains:", err)
+	}
+
+	/*groups := [][]string{
+		{"body24_BASE", "leftbackleg1_BASE", "leftbackknee1_BASE", "leftbackleg2_BASE"},
+		{"body22_BASE", "rightbackleg1_BASE", "rightbackknee1_BASE", "rightbackleg2_BASE"},
+		//{"body24_BASE", "leftbackleg1_BASE", "leftbackknee1_BASE", "leftbackleg2_BASE"},
+		//{"body24_BASE", "leftbackleg1_BASE", "leftbackknee1_BASE", "leftbackleg2_BASE"},
+	}*/
+
+	//linkCubeGroups(groups, "hinge", jointParams)
 
 	fmt.Println("Spawned all cubes.")
 	unfreezeAllCubes()
