@@ -419,7 +419,15 @@ func stiffenAllJointsBULK() {
 }
 
 func setMouthColorYellow() {
-	var mouthCubes = []string{"leftmouth_BASE", "rightmouth_BASE", "body24_BASE", "body22_BASE", "body9_BASE", "body7_BASE"}
+	var mouthCubes = []string{"leftmouth_BASE",
+		"rightmouth_BASE", "body24_BASE", "body22_BASE", "body9_BASE", "body7_BASE",
+		"body17_BASE",
+		"head1_BASE",
+		"head3_BASE",
+		"head2_BASE",
+		"head8_BASE",
+		"body2_BASE",
+	}
 
 	var wg sync.WaitGroup
 	for _, cubeName := range mouthCubes {
@@ -734,6 +742,12 @@ func main() {
 		{"body22_BASE", "rightbackleg1_BASE"},
 		{"body9_BASE", "leftfrontleg1_BASE"},
 		{"body7_BASE", "rightfrontleg1_BASE"},
+		{"body17_BASE", "tail3_BASE"},
+		{"head1_BASE", "rightear_BASE"},
+		{"head3_BASE", "leftear_BASE"},
+		{"head2_BASE", "leftmouth_BASE"},
+		{"head2_BASE", "rightmouth_BASE"},
+		{"head8_BASE", "neck_BASE", "body2_BASE"},
 	}
 
 	if err := linkCubeChains(chains, "hinge", jointParams); err != nil {
