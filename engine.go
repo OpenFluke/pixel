@@ -766,9 +766,276 @@ func main() {
 	fmt.Println("Spawned all cubes.")
 	unfreezeAllCubes()
 
+	//rotateLegDemo("joint_hinge_leftbackknee1_BASE_leftbackleg2_BASE")
+
+	/*fmt.Println("➡️ Rotating leftbackleg2_BASE +90° Y")
+	rotateCube("leftbackleg2_BASE", []float64{0, 90, 0})
+	time.Sleep(2 * time.Second)
+
+	fmt.Println("⬅️ Rotating leftbackleg2_BASE -90° Y")
+	rotateCube("leftbackleg2_BASE", []float64{0, -90, 0})*/
+
+	// 🔎 Find joint for leftbackleg2_BASE and animate it
+	/*joint := findClosestJoint("leftbackleg2_BASE")
+	if joint != "" {
+		rotateLegDemo(joint)
+
+		// Wait and try rotating on another axis by reversing again
+		time.Sleep(1 * time.Second)
+		fmt.Println("⏩ Rotating again in new direction...")
+		conn, _ := net.Dial("tcp", serverAddr)
+		defer conn.Close()
+		conn.Write([]byte(authPass + delimiter))
+		readResponse(conn)
+
+		setJointParam(conn, joint, "motor_target_velocity", 0.0)
+		setJointParam(conn, joint, "motor_enable", 1.0)
+		setJointParam(conn, joint, "motor_target_velocity", 5.0)
+		time.Sleep(500 * time.Millisecond)
+		setJointParam(conn, joint, "motor_target_velocity", -5.0)
+		time.Sleep(500 * time.Millisecond)
+		setJointParam(conn, joint, "motor_target_velocity", 0.0)
+	}*/
+
+	/*rotateAllJointsForCube("leftbackleg1_BASE")
+	rotateAllJointsForCube("leftbackknee1_BASE")
+	rotateAllJointsForCube("leftbackleg2_BASE")*/
+
+	//rotateCubeJoints("leftbackleg1_BASE", 2.5, 1*time.Second)
+
+	for i := 0; i < 5; i++ {
+		rotateCubeJoints("tail3_BASE", -3.0, 800*time.Millisecond)
+		time.Sleep(2 * time.Second)
+	}
+
 	fmt.Println("Waiting 3 seconds before despawning...")
 	time.Sleep(3 * time.Second)
 
 	despawnAllCubes()
 	fmt.Println("Despawned all cubes.")
+}
+
+func findClosestJoint(targetCube string) string {
+	linkListMutex.Lock()
+	defer linkListMutex.Unlock()
+
+	for _, link := range globalCubeLinks {
+		if link.CubeA == targetCube || link.CubeB == targetCube {
+			fmt.Printf("🔍 Found joint: %s (%s <-> %s)\n", link.JointName, link.CubeA, link.CubeB)
+			return link.JointName
+		}
+	}
+	fmt.Printf("⚠️ No joint found for cube: %s\n", targetCube)
+	return ""
+}
+
+func rotateLegDemo(jointName string) {
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Printf("[rotateLegDemo] Failed to connect: %v\n", err)
+		return
+	}
+	defer conn.Close()
+
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[rotateLegDemo] Auth write error:", err)
+		return
+	}
+	if _, err := readResponse(conn); err != nil {
+		fmt.Println("[rotateLegDemo] Auth response error:", err)
+		return
+	}
+
+	// First 90-degree rotation (approx via velocity)
+	fmt.Println("↪️ Rotating forward...")
+	setJointParam(conn, jointName, "motor_enable", 1)
+	setJointParam(conn, jointName, "motor_target_velocity", 5.0) // adjust speed as needed
+	setJointParam(conn, jointName, "motor_max_impulse", 1000)
+
+	time.Sleep(1 * time.Second) // Let it move for a second
+
+	// Reverse direction
+	fmt.Println("↩️ Rotating back...")
+	setJointParam(conn, jointName, "motor_target_velocity", -5.0)
+
+	time.Sleep(1 * time.Second)
+
+	// Stop movement
+	setJointParam(conn, jointName, "motor_target_velocity", 0.0)
+	fmt.Println("🛑 Leg motion complete.")
+}
+
+func rotateCube(cubeName string, rotationDelta []float64) {
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Printf("[rotateCube] Failed to connect: %v\n", err)
+		return
+	}
+	defer conn.Close()
+
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[rotateCube] Auth write error:", err)
+		return
+	}
+	if _, err := readResponse(conn); err != nil {
+		fmt.Println("[rotateCube] Auth response error:", err)
+		return
+	}
+
+	cmd := Message{
+		"type":   "apply_force",
+		"rotate": rotationDelta, // in degrees
+		"target": cubeName,      // optional, in case your server supports targeted cube
+	}
+
+	if err := sendJSONMessage(conn, cmd); err != nil {
+		fmt.Printf("[rotateCube] Failed to send rotate command: %v\n", err)
+		return
+	}
+
+	resp, err := readResponse(conn)
+	if err != nil {
+		fmt.Printf("[rotateCube] Failed to read rotate response: %v\n", err)
+		return
+	}
+
+	fmt.Printf("[rotateCube] Server response: %s\n", resp)
+}
+
+func rotateAllJointsForCube(targetCube string) {
+	fmt.Printf("🐾 Brute-forcing all joints for cube: %s\n", targetCube)
+
+	for _, link := range globalCubeLinks {
+		if link.CubeA == targetCube || link.CubeB == targetCube {
+			fmt.Printf("➡️ Rotating joint: %s (%s <-> %s)\n", link.JointName, link.CubeA, link.CubeB)
+
+			conn, err := net.Dial("tcp", serverAddr)
+			if err != nil {
+				fmt.Printf("[rotateAllJointsForCube] Failed to connect for joint %s: %v\n", link.JointName, err)
+				continue
+			}
+
+			if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+				conn.Close()
+				continue
+			}
+			_, _ = readResponse(conn)
+
+			setJointParam(conn, link.JointName, "motor_enable", 1.0)
+			setJointParam(conn, link.JointName, "motor_target_velocity", 5.0)
+			setJointParam(conn, link.JointName, "motor_max_impulse", 1000.0)
+
+			time.Sleep(500 * time.Millisecond)
+
+			setJointParam(conn, link.JointName, "motor_target_velocity", -5.0)
+
+			time.Sleep(500 * time.Millisecond)
+
+			setJointParam(conn, link.JointName, "motor_target_velocity", 0.0)
+
+			conn.Close()
+			fmt.Printf("✅ Done rotating joint: %s\n", link.JointName)
+		}
+	}
+}
+
+func getJointsForCube(cubeName string) []string {
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		fmt.Println("[getJointsForCube] Failed to connect:", err)
+		return nil
+	}
+	defer conn.Close()
+
+	// Authenticate
+	if _, err := conn.Write([]byte(authPass + delimiter)); err != nil {
+		fmt.Println("[getJointsForCube] Auth write error:", err)
+		return nil
+	}
+	if _, err := readResponse(conn); err != nil {
+		fmt.Println("[getJointsForCube] Auth response error:", err)
+		return nil
+	}
+
+	// Send command
+	cmd := Message{
+		"type":      "get_joints_for_cube",
+		"cube_name": cubeName,
+	}
+	if err := sendJSONMessage(conn, cmd); err != nil {
+		fmt.Println("[getJointsForCube] Failed to send command:", err)
+		return nil
+	}
+
+	respRaw, err := readResponse(conn)
+	if err != nil {
+		fmt.Println("[getJointsForCube] Failed to read response:", err)
+		return nil
+	}
+
+	var resp struct {
+		Type     string   `json:"type"`
+		CubeName string   `json:"cube_name"`
+		Joints   []string `json:"joints"`
+	}
+	if err := json.Unmarshal([]byte(respRaw), &resp); err != nil {
+		fmt.Println("[getJointsForCube] JSON unmarshal failed:", err)
+		return nil
+	}
+
+	return resp.Joints
+}
+
+func rotateCubeJoints(cubeName string, velocity float64, duration time.Duration) {
+	joints := getJointsForCube(cubeName)
+	if len(joints) == 0 {
+		fmt.Printf("[rotateCubeJoints] No joints found for cube %s\n", cubeName)
+		return
+	}
+
+	fmt.Printf("🦴 Found %d joints for %s. Applying rotation...\n", len(joints), cubeName)
+
+	for _, joint := range joints {
+		go func(jn string) {
+			conn, err := net.Dial("tcp", serverAddr)
+			if err != nil {
+				fmt.Printf("[rotateCubeJoints] Connect failed: %v\n", err)
+				return
+			}
+			defer conn.Close()
+
+			// Authenticate
+			conn.Write([]byte(authPass + delimiter))
+			readResponse(conn)
+
+			// Enable motor
+			params := Message{
+				"type":       "set_joint_params",
+				"joint_name": jn,
+				"params": map[string]float64{
+					"motor_enable":          1.0,
+					"motor_target_velocity": velocity,
+					"motor_max_impulse":     500.0,
+				},
+			}
+			sendJSONMessage(conn, params)
+			readResponse(conn) // optional
+
+			// Reverse after delay
+			time.Sleep(duration)
+
+			// Reverse
+			params["params"].(map[string]float64)["motor_target_velocity"] = -velocity
+			sendJSONMessage(conn, params)
+			readResponse(conn)
+
+			// Stop after another duration
+			time.Sleep(duration)
+			params["params"].(map[string]float64)["motor_target_velocity"] = 0.0
+			sendJSONMessage(conn, params)
+			readResponse(conn)
+
+			fmt.Printf("↩️ Completed joint cycle for: %s\n", jn)
+		}(joint)
+	}
 }
